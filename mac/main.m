@@ -355,6 +355,8 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     panel.allowedContentTypes = @[ UTTypePDF ];
     panel.allowsMultipleSelection = NO;
     panel.canChooseDirectories = NO;
+    panel.message = @"Choose the agency statement PDF — it fills in the total and period.";
+    panel.prompt = @"Import";
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
         if (result == NSModalResponseOK && panel.URL) {
             [self importStatementFromURL:panel.URL];
@@ -753,13 +755,25 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
               initiatedByFrame:(WKFrameInfo *)frame
              completionHandler:(void (^)(NSArray<NSURL *> *_Nullable))completionHandler {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
-    panel.allowsMultipleSelection = parameters.allowsMultipleSelection;
+    panel.allowsMultipleSelection = NO;
     panel.canChooseDirectories = NO;
+    panel.message = @"Choose a statement PDF to fill in, or a JSON invoice backup.";
+    panel.prompt = @"Open";
     if (@available(macOS 11.0, *)) {
-        panel.allowedContentTypes = @[ UTTypeJSON ];
+        panel.allowedContentTypes = @[ UTTypePDF, UTTypeJSON ];
     }
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
-        completionHandler(result == NSModalResponseOK ? panel.URLs : nil);
+        if (result != NSModalResponseOK || !panel.URL) {
+            completionHandler(nil);
+            return;
+        }
+        NSURL *url = panel.URL;
+        if ([url.pathExtension.lowercaseString isEqualToString:@"pdf"]) {
+            [self importStatementFromURL:url];
+            completionHandler(nil);
+        } else {
+            completionHandler(@[ url ]);
+        }
     }];
 }
 

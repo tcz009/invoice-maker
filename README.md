@@ -67,7 +67,9 @@ One invoice fits one A4 sheet with up to **8 service lines**; a 9th line spills 
 
 If your invoices come from a shift/pay statement PDF, the app can read it for you:
 
-**File ▸ Import Statement PDF…** (⇧⌘I), or the **Import statement PDF…** link under *Services provided*.
+**File ▸ Import Statement PDF…** (⇧⌘I), the **Import statement PDF…** link under *Services provided*,
+or just the top-bar **Import** button — it now accepts either a statement PDF or a JSON backup and
+routes them automatically.
 
 It pulls the **Total Pay** figure and the statement period out of the PDF and fills the invoice on
 screen (or starts the next one) with a single service line. Add any deduction — e.g. a uniform

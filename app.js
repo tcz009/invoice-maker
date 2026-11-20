@@ -517,6 +517,38 @@ function newInvoice() {
   return inv;
 }
 
+function importStatement(data) {
+  const amount = Number(data && data.total);
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+
+  // Fill the invoice on screen if it is still blank; otherwise start the next one.
+  const isBlank =
+    totalsOf(state.inv).total === 0 &&
+    !state.inv.items.some((item) => item.description !== '' || num(item.rate) !== 0);
+  const inv = isBlank ? state.inv : newInvoice();
+  const today = todayISO();
+  inv.issueDate = today;
+  inv.dueDate = endOfMonthISO(today);
+  inv.signatureDate = today;
+  if (data.from && data.to) inv.period = { from: data.from, to: data.to };
+
+  inv.items = [{
+    id: uid(),
+    date: periodLabel(inv.period),
+    description: 'Event Crew / Crew Chief services',
+    qty: '1',
+    rate: amount.toFixed(2),
+  }];
+
+  fillEditor();
+  refresh();
+  saveNow();
+  toast(`Imported ${money(Math.round(amount * 100))} — add any deduction, then Download ▸ PDF.`);
+  return true;
+}
+
+window.importStatement = importStatement;
+
 function switchTo(id) {
   const inv = state.store.invoices.find((i) => i.id === id);
   if (!inv) return;
@@ -965,6 +997,14 @@ function wire() {
   });
 
   $('#btnImport').addEventListener('click', () => $('#importFile').click());
+
+  const statementBtn = $('#btnImportStatement');
+  if (statementBtn) {
+    statementBtn.addEventListener('click', () => {
+      const handlers = nativeHandlers();
+      if (handlers && handlers.importStatement) handlers.importStatement.postMessage(null);
+    });
+  }
 
   $('#importFile').addEventListener('change', async (event) => {
     const file = event.target.files && event.target.files[0];

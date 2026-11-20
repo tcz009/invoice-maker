@@ -184,6 +184,7 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
 @property (nonatomic) BOOL connected;
 
 @property (nonatomic, copy) NSString *printTestPath;
+@property (nonatomic, copy) NSString *importTestPath;
 @property (nonatomic, strong) WKWebView *renderWebView;
 @property (nonatomic, strong) NSWindow *renderWindow;
 @property (nonatomic, copy) void (^renderCompletion)(NSData *data);
@@ -222,6 +223,15 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     }
 
     NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+    NSUInteger importFlag = [arguments indexOfObject:@"--import-test"];
+    if (importFlag != NSNotFound && importFlag + 1 < arguments.count) {
+        NSDictionary *parsed = [self parseStatementFromURL:[NSURL fileURLWithPath:arguments[importFlag + 1]]];
+        NSData *json = parsed ? [NSJSONSerialization dataWithJSONObject:parsed options:NSJSONWritingPrettyPrinted error:NULL] : nil;
+        printf("%s\n", json ? [[[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] UTF8String] : "null");
+        [NSApp terminate:nil];
+        return;
+    }
+
     NSUInteger printFlag = [arguments indexOfObject:@"--print-to"];
     if (printFlag != NSNotFound && printFlag + 1 < arguments.count) {
         self.printTestPath = arguments[printFlag + 1];
@@ -252,6 +262,7 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     [configuration.userContentController addScriptMessageHandler:self name:@"print"];
     [configuration.userContentController addScriptMessageHandler:self name:@"saveFile"];
     [configuration.userContentController addScriptMessageHandler:self name:@"savePDF"];
+    [configuration.userContentController addScriptMessageHandler:self name:@"importStatement"];
     [configuration.userContentController addUserScript:[[WKUserScript alloc]
         initWithSource:@"(function(){var n=window.print;window.print=function(){try{if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.print){window.webkit.messageHandlers.print.postMessage(null);}else if(n){n.call(window);}}catch(e){if(n){n.call(window);}}};})();"
         injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
@@ -304,6 +315,8 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     [mainMenu addItem:fileItem];
     NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
     fileItem.submenu = fileMenu;
+    NSMenuItem *importStatementItem = [fileMenu addItemWithTitle:@"Import Statement PDF…" action:@selector(importStatement:) keyEquivalent:@"I"];
+    importStatementItem.target = self;
     NSMenuItem *savePdfItem = [fileMenu addItemWithTitle:@"Save PDF…" action:@selector(savePDFMenuItem:) keyEquivalent:@"S"];
     savePdfItem.target = self;
     NSMenuItem *printItem = [fileMenu addItemWithTitle:@"Print…" action:@selector(printInvoice:) keyEquivalent:@"p"];
@@ -334,6 +347,88 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
 }
 
 #pragma mark printing
+
+#pragma mark statement import
+
+- (void)importStatement:(id)sender {
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.allowedContentTypes = @[ UTTypePDF ];
+    panel.allowsMultipleSelection = NO;
+    panel.canChooseDirectories = NO;
+    [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
+        if (result == NSModalResponseOK && panel.URL) {
+            [self importStatementFromURL:panel.URL];
+        }
+    }];
+}
+
+- (NSDictionary *)parseStatementFromURL:(NSURL *)url {
+    PDFDocument *document = [[PDFDocument alloc] initWithURL:url];
+    return [self parseStatementFromText:(document.string ?: @"")];
+}
+
+- (NSDictionary *)parseStatementFromText:(NSString *)text {
+    if (text.length == 0) return nil;
+
+    NSRegularExpression *totalPattern = [NSRegularExpression
+        regularExpressionWithPattern:@"Total\\s*Pay\\s*:?\\s*£?\\s*([0-9][0-9,]*(?:\\.[0-9]{2})?)"
+                             options:NSRegularExpressionCaseInsensitive
+                               error:NULL];
+    NSTextCheckingResult *totalMatch = [totalPattern firstMatchInString:text options:0 range:NSMakeRange(0, text.length)];
+    if (!totalMatch) return nil;
+
+    NSString *amount = [text substringWithRange:[totalMatch rangeAtIndex:1]];
+    amount = [amount stringByReplacingOccurrencesOfString:@"," withString:@""];
+
+    NSMutableDictionary *parsed = [NSMutableDictionary dictionary];
+    parsed[@"total"] = amount;
+    parsed[@"source"] = @"statement";
+
+    NSRegularExpression *periodPattern = [NSRegularExpression
+        regularExpressionWithPattern:@"([0-9]{2})/([0-9]{2})/([0-9]{4})\\s*To\\s*([0-9]{2})/([0-9]{2})/([0-9]{4})"
+                             options:NSRegularExpressionCaseInsensitive
+                               error:NULL];
+    NSTextCheckingResult *periodMatch = [periodPattern firstMatchInString:text options:0 range:NSMakeRange(0, text.length)];
+    if (periodMatch) {
+        NSString *from = [NSString stringWithFormat:@"%@-%@-%@",
+            [text substringWithRange:[periodMatch rangeAtIndex:3]],
+            [text substringWithRange:[periodMatch rangeAtIndex:2]],
+            [text substringWithRange:[periodMatch rangeAtIndex:1]]];
+        NSString *to = [NSString stringWithFormat:@"%@-%@-%@",
+            [text substringWithRange:[periodMatch rangeAtIndex:6]],
+            [text substringWithRange:[periodMatch rangeAtIndex:5]],
+            [text substringWithRange:[periodMatch rangeAtIndex:4]]];
+        parsed[@"from"] = from;
+        parsed[@"to"] = to;
+    }
+    return parsed;
+}
+
+- (void)importStatementFromURL:(NSURL *)url {
+    NSDictionary *parsed = [self parseStatementFromURL:url];
+    if (!parsed) {
+        [self showStatementError];
+        return;
+    }
+
+    NSData *json = [NSJSONSerialization dataWithJSONObject:parsed options:0 error:NULL];
+    NSString *jsonText = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+    NSString *script = [NSString stringWithFormat:@"window.importStatement(%@);", jsonText];
+
+    [self.webView evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
+        if (error || ![result boolValue]) {
+            [self showStatementError];
+        }
+    }];
+}
+
+- (void)showStatementError {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleWarning;
+    alert.messageText = @"Could not read that statement";
+    alert.informativeText = @"No “Total Pay” figure was found in the PDF. You can still type the amount in yourself.";
+    [alert beginSheetModalForWindow:self.window completionHandler:nil];
+}
 
 - (void)savePDFMenuItem:(id)sender {
     [self saveInvoicePDF:nil];
@@ -458,6 +553,8 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
         [self saveFileFromBody:message.body];
     } else if ([message.name isEqualToString:@"savePDF"]) {
         [self saveInvoicePDF:message.body];
+    } else if ([message.name isEqualToString:@"importStatement"]) {
+        [self importStatement:nil];
     }
 }
 

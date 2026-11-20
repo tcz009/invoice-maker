@@ -63,6 +63,19 @@ Before publishing your own build, change the bundle identifier in `mac/Info.plis
 
 One invoice fits one A4 sheet with up to **8 service lines**; a 9th line spills onto a second page.
 
+## Importing a statement (macOS app)
+
+If your invoices come from a shift/pay statement PDF, the app can read it for you:
+
+**File ▸ Import Statement PDF…** (⇧⌘I), or the **Import statement PDF…** link under *Services provided*.
+
+It pulls the **Total Pay** figure and the statement period out of the PDF and fills the invoice on
+screen (or starts the next one) with a single service line. Add any deduction — e.g. a uniform
+repayment as a negative `Rate` — then **Download ▸ PDF**.
+
+The parser looks for `Total Pay : £…` and a `dd/mm/yyyy To dd/mm/yyyy` period, which covers the
+standard agency statement; anything else can still be typed in by hand.
+
 ## Downloading
 
 ![The Download menu](screenshots/downloads.png)

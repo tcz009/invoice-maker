@@ -106,6 +106,9 @@ body {
 
 .lbl-short { display: none; }
 
+.native-only { display: none; }
+body.native .native-only { display: inline-flex; }
+
 .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
 .btn-ghost:hover { background: #eceff4; border-color: transparent; color: var(--ink); }
 

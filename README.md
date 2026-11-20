@@ -105,6 +105,16 @@ the invoice and carried into the next one you create.
 Nothing leaves the machine. Use **Export** to keep a JSON backup; clearing site data or the app's
 container removes the invoices.
 
+## Screenshots
+
+The Excel download — same layout as the sheet, with live formulas and `£` formats:
+
+![Excel export](screenshots/excel.png)
+
+On a phone the form stacks above a scaled preview:
+
+![Mobile layout](screenshots/mobile.png)
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

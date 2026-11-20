@@ -251,6 +251,7 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     configuration.websiteDataStore = [WKWebsiteDataStore defaultDataStore];
     [configuration.userContentController addScriptMessageHandler:self name:@"print"];
     [configuration.userContentController addScriptMessageHandler:self name:@"saveFile"];
+    [configuration.userContentController addScriptMessageHandler:self name:@"savePDF"];
     [configuration.userContentController addUserScript:[[WKUserScript alloc]
         initWithSource:@"(function(){var n=window.print;window.print=function(){try{if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.print){window.webkit.messageHandlers.print.postMessage(null);}else if(n){n.call(window);}}catch(e){if(n){n.call(window);}}};})();"
         injectionTime:WKUserScriptInjectionTimeAtDocumentEnd
@@ -303,6 +304,8 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     [mainMenu addItem:fileItem];
     NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
     fileItem.submenu = fileMenu;
+    NSMenuItem *savePdfItem = [fileMenu addItemWithTitle:@"Save PDF…" action:@selector(savePDFMenuItem:) keyEquivalent:@"S"];
+    savePdfItem.target = self;
     NSMenuItem *printItem = [fileMenu addItemWithTitle:@"Print…" action:@selector(printInvoice:) keyEquivalent:@"p"];
     printItem.target = self;
     [fileMenu addItem:[NSMenuItem separatorItem]];
@@ -331,6 +334,10 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
 }
 
 #pragma mark printing
+
+- (void)savePDFMenuItem:(id)sender {
+    [self saveInvoicePDF:nil];
+}
 
 - (void)printInvoice:(id)sender {
     if (!self.connected) {
@@ -449,6 +456,8 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
         [self printInvoice:nil];
     } else if ([message.name isEqualToString:@"saveFile"]) {
         [self saveFileFromBody:message.body];
+    } else if ([message.name isEqualToString:@"savePDF"]) {
+        [self saveInvoicePDF:message.body];
     }
 }
 
@@ -457,18 +466,63 @@ static NSString *const kBaseURLString = @"http://127.0.0.1:47823/";
     NSDictionary *payload = (NSDictionary *)body;
     NSString *filename = payload[@"filename"];
     NSString *text = payload[@"text"];
-    if (![text isKindOfClass:[NSString class]]) return;
+    NSString *base64 = payload[@"base64"];
+    NSString *kind = payload[@"kind"];
+
+    NSData *binary = nil;
+    if ([base64 isKindOfClass:[NSString class]]) {
+        binary = [[NSData alloc] initWithBase64EncodedString:base64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
+    }
+    if (!binary && ![text isKindOfClass:[NSString class]]) return;
 
     NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = [filename isKindOfClass:[NSString class]] ? filename : @"invoice.json";
+    panel.nameFieldStringValue = [filename isKindOfClass:[NSString class]] ? filename : @"invoice";
     panel.canCreateDirectories = YES;
     if (@available(macOS 11.0, *)) {
-        panel.allowedContentTypes = @[ UTTypeJSON ];
+        if ([kind isEqualToString:@"png"]) {
+            panel.allowedContentTypes = @[ UTTypePNG ];
+        } else if ([kind isEqualToString:@"xlsx"]) {
+            panel.allowedContentTypes = @[ UTTypeSpreadsheet ];
+        } else if ([kind isEqualToString:@"csv"]) {
+            panel.allowedContentTypes = @[ UTTypeCommaSeparatedText ];
+        } else {
+            panel.allowedContentTypes = @[ UTTypeJSON ];
+        }
     }
     [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
-        if (response == NSModalResponseOK && panel.URL) {
+        if (response != NSModalResponseOK || !panel.URL) return;
+        if (binary) {
+            [binary writeToURL:panel.URL atomically:YES];
+        } else {
             [text writeToURL:panel.URL atomically:YES encoding:NSUTF8StringEncoding error:NULL];
         }
+    }];
+}
+
+// "Download ▸ PDF" and File ▸ Save PDF… — render the sheet and save it without the print dialog.
+- (void)saveInvoicePDF:(id)body {
+    NSString *suggested = @"Invoice.pdf";
+    if ([body isKindOfClass:[NSDictionary class]]) {
+        NSString *name = ((NSDictionary *)body)[@"filename"];
+        if ([name isKindOfClass:[NSString class]] && name.length) suggested = name;
+    }
+
+    [self generateInvoicePDF:^(NSData *pdfData) {
+        if (pdfData.length == 0) {
+            NSBeep();
+            return;
+        }
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = suggested;
+        panel.canCreateDirectories = YES;
+        if (@available(macOS 11.0, *)) {
+            panel.allowedContentTypes = @[ UTTypePDF ];
+        }
+        [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
+            if (response == NSModalResponseOK && panel.URL) {
+                [pdfData writeToURL:panel.URL atomically:YES];
+            }
+        }];
     }];
 }
 

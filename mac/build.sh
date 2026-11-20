@@ -14,7 +14,9 @@ clang -fobjc-arc -O2 -Wall -Wno-deprecated-declarations \
   -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers -framework PDFKit \
   -o "$APP/Contents/MacOS/InvoiceMaker" "$HERE/main.m"
 
-cp "$ROOT/index.html" "$ROOT/styles.css" "$ROOT/app.js" "$APP/Contents/Resources/web/"
+cp "$ROOT/index.html" "$ROOT/styles.css" "$ROOT/app.js" "$ROOT/xlsx.js" "$APP/Contents/Resources/web/"
+mkdir -p "$APP/Contents/Resources/web/vendor"
+cp "$ROOT/vendor/html2canvas.min.js" "$APP/Contents/Resources/web/vendor/"
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
 cp "$HERE/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 

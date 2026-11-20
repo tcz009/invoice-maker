@@ -19,7 +19,8 @@ It produces a clean A4 invoice laid out like a classic contractor invoice form:
   the period onto every line. A 15th → 14th cycle is available with one setting.
 - **Due-date rules** — end of invoice month, on receipt, 14 days or 30 days.
 - **Invoice library** — open, duplicate or delete past invoices; everything autosaves.
-- **Export / Import** — JSON backup of any invoice, for moving between browsers or machines.
+- **Downloads** — PDF (macOS app), PNG image, **Excel (.xlsx)**, CSV and JSON backup of any invoice.
+- **Export / Import** — JSON files move an invoice between browsers or machines.
 - **Currency** — GBP by default, with EUR and USD available.
 - **Works offline** — everything runs from the local files.
 
@@ -62,6 +63,23 @@ Before publishing your own build, change the bundle identifier in `mac/Info.plis
 
 One invoice fits one A4 sheet with up to **8 service lines**; a 9th line spills onto a second page.
 
+## Downloading
+
+![The Download menu](screenshots/downloads.png)
+
+The **Download** button saves the current invoice as:
+
+| Format | Good for |
+| --- | --- |
+| **PDF** | A4, one page. Saves straight to disk in the macOS app; in a browser use *Print → Save as PDF*. |
+| **PNG image** | The A4 sheet at 2× (1586 × 2244 px) — quick to send in a message. |
+| **Excel (.xlsx)** | A styled workbook that mirrors the invoice: navy bands, bordered table, `£` number formats and live formulas (`Amount = Hours × Rate`, `Subtotal = SUM(...)`). Recalculates when opened. |
+| **CSV** | One row per service line plus the invoice header — for bookkeeping or importing elsewhere. |
+| **JSON** | Complete backup of the invoice; re-import with the **Import** button. |
+
+Everything is generated in the browser/app — no upload, no external service. PNG rendering uses the
+bundled [html2canvas](vendor/README.md); the `.xlsx` is written from scratch by `xlsx.js` (no library).
+
 ## Customising
 
 The code is plain HTML/CSS/JS plus a small Objective-C wrapper — edit and reload, no build step for
@@ -69,7 +87,8 @@ the web part.
 
 | File | What's in it |
 | --- | --- |
-| `app.js` | `SEED` (default contractor / payment details for a fresh install), `CERT_TEXT`, `SUBMIT_TEXT`, `DEFAULT_PERIOD`, `MIN_LINES`, `CURRENCIES` |
+| `app.js` | `SEED` (default contractor / payment details for a fresh install), `CERT_TEXT`, `SUBMIT_TEXT`, `DEFAULT_PERIOD`, `MIN_LINES`, `CURRENCIES`, and the export actions |
+| `xlsx.js` | dependency-free `.xlsx` writer — the sheet layout used by the Excel download |
 | `styles.css` | `--accent` brand colour, the form UI, and the A4 paper styles |
 | `index.html` | the fields on the left-hand side |
 | `mac/main.m` | the macOS wrapper: window, menu, printing, file panels |

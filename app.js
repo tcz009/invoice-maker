@@ -627,15 +627,32 @@ function toast(message) {
 /* download                                                          */
 /* ---------------------------------------------------------------- */
 
-function download(filename, text) {
-  // Inside the native macOS app, hand the file to a proper save panel.
-  const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saveFile;
-  if (bridge) {
-    bridge.postMessage({ filename, text });
-    return;
-  }
+function nativeHandlers() {
+  return window.webkit && window.webkit.messageHandlers ? window.webkit.messageHandlers : null;
+}
 
-  const blob = new Blob([text], { type: 'application/json' });
+function isNativeApp() {
+  const handlers = nativeHandlers();
+  return !!(handlers && handlers.saveFile);
+}
+
+function kindForMime(mime) {
+  if (mime === 'image/png') return 'png';
+  if (mime === 'text/csv') return 'csv';
+  if (mime.indexOf('spreadsheetml') !== -1) return 'xlsx';
+  return 'json';
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -644,6 +661,151 @@ function download(filename, text) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function saveTextFile(filename, text, mime) {
+  const handlers = nativeHandlers();
+  if (handlers && handlers.saveFile) {
+    handlers.saveFile.postMessage({ filename, text, kind: kindForMime(mime) });
+    return;
+  }
+  triggerDownload(new Blob([text], { type: mime }), filename);
+}
+
+function saveBase64File(filename, base64, mime) {
+  const handlers = nativeHandlers();
+  if (handlers && handlers.saveFile) {
+    handlers.saveFile.postMessage({ filename, base64, kind: kindForMime(mime) });
+    return;
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  triggerDownload(new Blob([bytes], { type: mime }), filename);
+}
+
+function fileBase() {
+  return (state.inv.number || 'invoice').replace(/[^a-z0-9._-]+/gi, '-');
+}
+
+function buildCSV(invoice) {
+  const quote = (value) => `"${String(value == null ? '' : value).replace(/"/g, '""')}"`;
+  const t = totalsOf(invoice);
+  const rows = [];
+
+  rows.push(['Invoice', invoice.number].map(quote).join(','));
+  rows.push(['Invoice date', invoice.issueDate].map(quote).join(','));
+  rows.push(['Due date', invoice.dueDate].map(quote).join(','));
+  rows.push(['Contractor', invoice.contractor.name].map(quote).join(','));
+  rows.push(['Business', invoice.contractor.business].map(quote).join(','));
+  rows.push(['Email', invoice.contractor.email].map(quote).join(','));
+  rows.push(['Currency', invoice.currency].map(quote).join(','));
+  rows.push('');
+  rows.push(['Date', 'Description', 'Hours / Qty', 'Rate', 'Amount'].map(quote).join(','));
+
+  invoice.items.forEach((item) => {
+    rows.push([
+      item.date,
+      item.description,
+      String(num(item.qty)),
+      num(item.rate).toFixed(2),
+      (lineCents(item) / 100).toFixed(2),
+    ].map(quote).join(','));
+  });
+
+  rows.push('');
+  rows.push(['Subtotal', '', '', '', (t.subtotal / 100).toFixed(2)].map(quote).join(','));
+  rows.push(['Total amount due', '', '', '', (t.total / 100).toFixed(2)].map(quote).join(','));
+  return rows.join('\r\n');
+}
+
+function exportJSON() {
+  saveNow();
+  saveTextFile(
+    `${fileBase()}.json`,
+    JSON.stringify({ app: 'contractor-invoice-maker', version: 1, exportedAt: new Date().toISOString(), invoice: state.inv }, null, 2),
+    'application/json',
+  );
+  toast('JSON backup saved.');
+}
+
+function exportCSV() {
+  saveNow();
+  saveTextFile(`${fileBase()}.csv`, '\ufeff' + buildCSV(state.inv), 'text/csv');
+  toast('CSV spreadsheet saved.');
+}
+
+async function renderInvoiceCanvas(scale) {
+  const source = $('#paper');
+  const wrap = document.createElement('div');
+  wrap.className = 'paper';
+  wrap.setAttribute('aria-hidden', 'true');
+  wrap.style.cssText = 'position:fixed;left:-10000px;top:0;margin:0;zoom:1;box-shadow:none;';
+  wrap.innerHTML = source.innerHTML;
+  document.body.appendChild(wrap);
+
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+  const width = 793;
+  const height = Math.max(1122, Math.ceil(wrap.getBoundingClientRect().height));
+  try {
+    return await window.html2canvas(wrap, {
+      scale,
+      width,
+      height,
+      windowWidth: 1440,
+      windowHeight: 1440,
+      backgroundColor: '#ffffff',
+      logging: false,
+    });
+  } finally {
+    wrap.remove();
+  }
+}
+
+async function exportPNG() {
+  if (!window.html2canvas) {
+    toast('Image export needs the bundled renderer.');
+    return;
+  }
+  saveNow();
+  toast('Rendering image…');
+  try {
+    const canvas = await renderInvoiceCanvas(2);
+    saveBase64File(`${fileBase()}.png`, canvas.toDataURL('image/png').split(',')[1], 'image/png');
+    toast('PNG image saved.');
+  } catch (error) {
+    console.error(error);
+    toast('Could not render the image.');
+  }
+}
+
+function exportXLSX() {
+  saveNow();
+  try {
+    const bytes = window.InvoiceXLSX.build(state.inv);
+    saveBase64File(
+      `${fileBase()}.xlsx`,
+      bytesToBase64(bytes),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    toast('Excel workbook saved.');
+  } catch (error) {
+    console.error(error);
+    toast('Could not build the spreadsheet.');
+  }
+}
+
+function exportPDF() {
+  const handlers = nativeHandlers();
+  if (handlers && handlers.savePDF) {
+    saveNow();
+    handlers.savePDF.postMessage({ filename: `${fileBase()}.pdf` });
+    return;
+  }
+  toast('Choose “Save as PDF” in the print dialog.');
+  saveNow();
+  window.print();
 }
 
 /* ---------------------------------------------------------------- */
@@ -765,14 +927,41 @@ function wire() {
     window.print();
   });
 
-  $('#btnExport').addEventListener('click', () => {
-    saveNow();
-    const safe = (state.inv.number || 'invoice').replace(/[^a-z0-9._-]+/gi, '-');
-    download(
-      `${safe}.json`,
-      JSON.stringify({ app: 'contractor-invoice-maker', version: 1, exportedAt: new Date().toISOString(), invoice: state.inv }, null, 2),
-    );
-    toast('Invoice exported as JSON.');
+  /* download menu */
+  const downloadBtn = $('#btnDownload');
+  const downloadMenu = $('#downloadMenu');
+
+  const closeDownloadMenu = () => {
+    downloadMenu.hidden = true;
+    downloadBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  downloadBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const opening = downloadMenu.hidden;
+    downloadMenu.hidden = !opening;
+    downloadBtn.setAttribute('aria-expanded', String(opening));
+    if (opening) downloadMenu.querySelector('button').focus();
+  });
+
+  downloadMenu.addEventListener('click', (event) => {
+    const item = event.target.closest('[data-download]');
+    if (!item) return;
+    closeDownloadMenu();
+    const kind = item.dataset.download;
+    if (kind === 'pdf') exportPDF();
+    else if (kind === 'png') exportPNG();
+    else if (kind === 'xlsx') exportXLSX();
+    else if (kind === 'csv') exportCSV();
+    else if (kind === 'json') exportJSON();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!downloadMenu.hidden && !event.target.closest('.download')) closeDownloadMenu();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !downloadMenu.hidden) closeDownloadMenu();
   });
 
   $('#btnImport').addEventListener('click', () => $('#importFile').click());
@@ -883,6 +1072,7 @@ function boot() {
   if (new URLSearchParams(window.location.search).has('print')) {
     document.body.classList.add('print-mode');
   }
+  if (isNativeApp()) document.body.classList.add('native');
 
   state.store = loadStore();
   state.settings = state.store.settings;

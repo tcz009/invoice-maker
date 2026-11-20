@@ -148,6 +148,51 @@ body {
 }
 .icon-btn:hover { background: #f1f3f6; color: #b42318; border-color: var(--line); }
 
+/* ---------------- download menu ---------------- */
+
+.download { position: relative; display: inline-flex; }
+.download .chev { margin-left: 1px; opacity: .55; }
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 186px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 10px rgba(16, 24, 40, .06), 0 16px 36px rgba(16, 24, 40, .14);
+}
+.menu[hidden] { display: none; }
+
+.menu button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.menu button:hover { background: #f3f5f8; }
+.menu button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); outline-offset: -2px; }
+.menu-hint { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* PDF is written straight to disk by the macOS app; in a browser the Print button covers it. */
+body:not(.native) .menu [data-download="pdf"] { display: none; }
+
 /* ---------------- layout ---------------- */
 
 .workspace {
